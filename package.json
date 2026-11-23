@@ -1,0 +1,12 @@
+{
+  "name": "naute",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri CLI for building Naute (the app itself is Rust)",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

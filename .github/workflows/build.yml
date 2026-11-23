@@ -72,6 +72,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Tauri CLI
+        run: npm ci --no-audit --no-fund
       - uses: taiki-e/install-action@v2
         with:
           tool: trunk
@@ -82,7 +84,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf cmake
       - name: Build
         shell: bash
-        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }}
+        run: npm run tauri -- build --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: naute-${{ matrix.target }}
@@ -112,6 +114,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Tauri CLI
+        run: npm ci --no-audit --no-fund
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -131,20 +135,20 @@ jobs:
           echo "TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26" >> "$GITHUB_ENV"
       - name: Generate the Android project
         run: |
-          npx --yes @tauri-apps/cli@2 android init --ci
-          npx --yes @tauri-apps/cli@2 icon branding/icon-1024.png
+          npm run tauri -- android init --ci
+          npm run tauri -- icon branding/icon-1024.png
           # Dictation needs the microphone.
           sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <application#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
       - name: Build APK (with on-device dictation)
         id: full
         continue-on-error: true
-        run: npx --yes @tauri-apps/cli@2 android build --apk --target aarch64
+        run: npm run tauri -- android build --apk --target aarch64
       - name: Build APK (fallback without dictation engine)
         if: steps.full.outcome == 'failure'
         run: |
           echo "::warning::The speech engine did not build for Android; this APK has dictation disabled."
           sed -i 's/^default = \["stt"\]/default = []/' src-tauri/Cargo.toml
-          npx --yes @tauri-apps/cli@2 android build --apk --target aarch64
+          npm run tauri -- android build --apk --target aarch64
       - name: Sign APK
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
