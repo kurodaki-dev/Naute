@@ -1,0 +1,33 @@
+[package]
+name = "naute-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Naute's interface, written in Rust with Leptos and compiled to WebAssembly"
+
+[dependencies]
+naute-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "AudioContext", "AudioContextOptions", "AudioDestinationNode", "AudioNode", "AudioProcessingEvent", "AudioBuffer",
+  "BaseAudioContext", "MediaStreamAudioSourceNode", "ScriptProcessorNode", "MediaDevices", "MediaStream",
+  "MediaStreamConstraints", "MediaStreamTrack", "Navigator", "Window", "Document", "HtmlDocument", "Element",
+  "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement", "HtmlCanvasElement", "HtmlImageElement",
+  "CanvasRenderingContext2d", "TextMetrics", "DomRect", "Event", "EventTarget", "KeyboardEvent", "MouseEvent",
+  "PointerEvent", "FileList", "File", "Blob", "FileReader", "Node", "NodeList", "Selection", "Range", "Storage",
+  "FontFaceSet", "DomTokenList", "CssStyleDeclaration", "HtmlCollection", "Text", "HtmlTableElement",
+  "HtmlTableRowElement", "HtmlTableCellElement", "HtmlSelectElement", "ScrollIntoViewOptions", "ScrollBehavior",
+  "ScrollLogicalPosition", "SvgElement", "SvgsvgElement", "FocusEvent", "InputEvent", "Url", "BlobPropertyBag",
+  "HtmlAnchorElement", "ResizeObserver", "ResizeObserverEntry", "TouchEvent", "WheelEvent",
+]

@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+filehash = true
+
+[watch]
+watch = ["src", "style.css", "index.html", "locales", "../core/src"]
+
+[serve]
+port = 1420
+open = false
+ws_protocol = "ws"

@@ -1,0 +1,10 @@
+[package]
+name = "naute-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Document model, layout, rendering and formulas shared by the Naute app and its UI"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

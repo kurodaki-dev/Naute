@@ -1,0 +1,185 @@
+name: Build Naute
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Portable CPU builds: never tune ggml to the CI machine's processor.
+  TRANSCRIBE_CMAKE_ARGS: -DGGML_NATIVE=OFF
+
+jobs:
+  check:
+    name: Tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev cmake
+      - name: Translations
+        run: python3 scripts/check_locales.py
+      - name: Core tests
+        run: cargo test -p naute-core
+      - name: Interface (WebAssembly)
+        run: cargo check -p naute-ui --target wasm32-unknown-unknown
+      - name: App tests (exports)
+        run: |
+          mkdir -p ui/dist && echo '<!doctype html>' > ui/dist/index.html
+          cargo test -p naute --no-default-features
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf cmake
+      - name: Build
+        shell: bash
+        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naute-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            target/${{ matrix.target }}/release/bundle/msi/*.msi
+            target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/deb/*.deb
+            target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+
+  android:
+    name: Android
+    needs: check
+    runs-on: ubuntu-22.04
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Android NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" "cmake;3.22.1"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "CMAKE_TOOLCHAIN_FILE_aarch64_linux_android=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake" >> "$GITHUB_ENV"
+          echo "TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26" >> "$GITHUB_ENV"
+      - name: Generate the Android project
+        run: |
+          npx --yes @tauri-apps/cli@2 android init --ci
+          npx --yes @tauri-apps/cli@2 icon branding/icon-1024.png
+          # Dictation needs the microphone.
+          sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <application#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      - name: Build APK (with on-device dictation)
+        id: full
+        continue-on-error: true
+        run: npx --yes @tauri-apps/cli@2 android build --apk --target aarch64
+      - name: Build APK (fallback without dictation engine)
+        if: steps.full.outcome == 'failure'
+        run: |
+          echo "::warning::The speech engine did not build for Android; this APK has dictation disabled."
+          sed -i 's/^default = \["stt"\]/default = []/' src-tauri/Cargo.toml
+          npx --yes @tauri-apps/cli@2 android build --apk --target aarch64
+      - name: Sign APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -n1)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > release.keystore
+            PASS="$KEYSTORE_PASSWORD"
+          else
+            echo "::notice::No ANDROID_KEYSTORE_B64 secret: signing with a throwaway key (fine for testing; updates need a stable key)."
+            PASS=naute-ci
+            keytool -genkeypair -v -keystore release.keystore -alias naute -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Naute, O=Kurodaki"
+          fi
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks release.keystore --ks-pass "pass:$PASS" --ks-key-alias naute --out Naute-android-arm64.apk aligned.apk
+          "$BT/apksigner" verify Naute-android-arm64.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naute-android
+          path: Naute-android-arm64.apk
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/**/*
