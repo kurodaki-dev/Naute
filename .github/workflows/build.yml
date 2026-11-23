@@ -172,16 +172,46 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Every push to main publishes a release; a v* tag publishes that exact version.
+    if: always() && needs.desktop.result == 'success' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: [desktop, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: v
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=Naute ${TAG#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: dist
+      - name: Collect files
+        run: |
+          mkdir -p files
+          find dist -type f -exec cp {} files/ \;
+          ls -la files
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          files: dist/**/*
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: ${{ steps.v.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            ## Téléchargements
+            - **Windows** : `*-setup.exe` (installateur) ou `.msi`
+            - **macOS** : `.dmg` (`aarch64` = Apple Silicon, `x64` = Intel) — clic droit → Ouvrir au premier lancement
+            - **Linux** : `.AppImage`, `.deb` ou `.rpm`
+            - **Android** : `Naute-android-arm64.apk`
+
+            Les binaires ne sont pas signés ; Windows et macOS afficheront un avertissement.
+          files: files/*
