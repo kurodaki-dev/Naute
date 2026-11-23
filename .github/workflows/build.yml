@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -116,13 +116,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
       - uses: taiki-e/install-action@v2
         with:
           tool: trunk
       - name: Android NDK
         run: |
-          sdkmanager --install "ndk;${NDK_VERSION}" "cmake;3.22.1"
+          # The Android SDK ships with GitHub's Ubuntu runners.
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;${NDK_VERSION}" "platforms;android-34" "build-tools;34.0.0"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "CMAKE_TOOLCHAIN_FILE_aarch64_linux_android=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake" >> "$GITHUB_ENV"
