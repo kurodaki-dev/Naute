@@ -4,6 +4,9 @@ fn main() {
     if os == "macos" && arch == "aarch64" && std::env::var_os("CARGO_FEATURE_STT").is_some() {
         link_clang_rt_osx();
     }
+    if os == "android" && std::env::var_os("CARGO_FEATURE_STT").is_some() {
+        stub_pthread();
+    }
     tauri_build::build()
 }
 
@@ -21,4 +24,13 @@ fn link_clang_rt_osx() {
     assert!(darwin.join("libclang_rt.osx.a").exists(), "libclang_rt.osx.a not found in {}", darwin.display());
     println!("cargo:rustc-link-search=native={}", darwin.display());
     println!("cargo:rustc-link-lib=static=clang_rt.osx");
+}
+
+/// transcribe.cpp's CMake asks for `-lpthread`. On Android pthreads live in
+/// bionic's libc and there is no libpthread, so give the linker an empty one.
+fn stub_pthread() {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("pthread-stub");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("libpthread.a"), b"!<arch>\n").unwrap();
+    println!("cargo:rustc-link-search=native={}", out.display());
 }
